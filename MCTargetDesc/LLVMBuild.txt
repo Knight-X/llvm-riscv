@@ -1,0 +1,7 @@
+
+[component_0]
+type = Library
+name = RISCVDesc
+parent = RISCV
+required_libraries = MC RISCVInfo Support RISCVAsmPrinter
+add_to_library_groups = RISCV

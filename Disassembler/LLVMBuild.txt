@@ -1,0 +1,8 @@
+
+[component_0]
+type = Library
+name = RISCVDisassembler
+parent = RISCV
+required_libraries = MCDisassembler RISCVInfo Support
+add_to_library_groups = RISCV
+
