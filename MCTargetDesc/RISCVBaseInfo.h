@@ -13,7 +13,8 @@ enum {
   InstFormatS = 3,
   InstFormatB = 4,
   InstFormatU = 5,
-  InstFormatOther = 6,
+  InstFormatJ = 6,
+  InstFormatOther = 7,
 
   InstFormatMask = 15
 };

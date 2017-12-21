@@ -34,6 +34,7 @@ let DecoderMethod = "decodeUImmOperand<5>";
 }
 def simm12 : Operand<XLenVT> {
   let ParseMatchClass = SImmAsmOperand<12>;
+  let EncoderMethod = "getImmOpValue";
   let DecoderMethod = "decodeSImmOperand<12>";
 }
 

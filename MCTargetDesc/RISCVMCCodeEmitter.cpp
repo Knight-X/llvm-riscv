@@ -1,4 +1,7 @@
 #include "MCTargetDesc/RISCVMCTargetDesc.h"
+#include "MCTargetDesc/RISCVBaseInfo.h"
+#include "MCTargetDesc/RISCVFixupKinds.h"
+#include "MCTargetDesc/RISCVMCExpr.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCCodeEmitter.h"
@@ -6,6 +9,7 @@
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstrInfo.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/Casting.h"
@@ -18,6 +22,7 @@ using namespace llvm;
 
 STATISTIC(MCNumEmitted, "Number of MC instructions emitted");
 
+STATISTIC(MCNumFixups, "Number of MC fixups created");
 namespace {
 class RISCVMCCodeEmitter : public MCCodeEmitter {
   RISCVMCCodeEmitter(const RISCVMCCodeEmitter &) = delete;
@@ -93,8 +98,7 @@ RISCVMCCodeEmitter::getImmOpValueAsr1(const MCInst &MI, unsigned OpNo,
     return Res >> 1;
   }
 
-  llvm_unreachable("Unhandled expression!");
-  return 0;
+  return getImmOpValue(MI, OpNo, Fixups, STI);
 }
 
 unsigned RISCVMCCodeEmitter::getImmOpValue(const MCInst &MI, unsigned OpNo,
@@ -103,12 +107,49 @@ unsigned RISCVMCCodeEmitter::getImmOpValue(const MCInst &MI, unsigned OpNo,
 
   const MCOperand &MO = MI.getOperand(OpNo);
 
+  MCInstrDesc const &Desc = MCII.get(MI.getOpcode());
+  unsigned MIFrm = Desc.TSFlags & RISCVII::InstFormatMask;
   // If the destination is an immediate, there is nothing to do
   if (MO.isImm())
     return MO.getImm();
 
-  llvm_unreachable("Unhandled expression!");
+  assert(MO.isExpr() &&
+         "getImmOpValue expects only expressions or immediates");
+  const MCExpr *Expr = MO.getExpr();
+  MCExpr::ExprKind Kind = Expr->getKind();
+  RISCV::Fixups FixupKind = RISCV::fixup_riscv_invalid;
+  if (Kind == MCExpr::Target) {
+   const RISCVMCExpr *RVExpr = cast<RISCVMCExpr>(Expr);
 
+   switch (RVExpr->getKind()) {
+    case RISCVMCExpr::VK_RISCV_None:
+    case RISCVMCExpr::VK_RISCV_Invalid:
+      llvm_unreachable("Unhandled fixup kind!");
+    case RISCVMCExpr::VK_RISCV_LO:
+      FixupKind = MIFrm == RISCVII::InstFormatI ? RISCV::fixup_riscv_lo12_i
+                                                : RISCV::fixup_riscv_lo12_s;
+     break;
+    case RISCVMCExpr::VK_RISCV_HI:
+      FixupKind = RISCV::fixup_riscv_hi20;
+     break;
+    case RISCVMCExpr::VK_RISCV_PCREL_HI:
+      FixupKind = RISCV::fixup_riscv_pcrel_hi20;
+     break;
+    }
+  } else if (Kind == MCExpr::SymbolRef &&
+             cast<MCSymbolRefExpr>(Expr)->getKind() == MCSymbolRefExpr::VK_None) {
+    if (Desc.getOpcode() == RISCV::JAL) {
+      FixupKind = RISCV::fixup_riscv_jal;
+    } else if (MIFrm == RISCVII::InstFormatB) {
+      FixupKind = RISCV::fixup_riscv_branch;
+    }
+  }
+
+  assert(FixupKind != RISCV::fixup_riscv_invalid && "Unhandled expression!");
+
+  Fixups.push_back(
+     MCFixup::create(0, Expr, MCFixupKind(FixupKind), MI.getLoc()));
+  ++MCNumFixups;
   return 0;
  }
 #include "RISCVGenMCCodeEmitter.inc"
